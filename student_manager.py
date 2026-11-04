@@ -193,7 +193,7 @@ MENU = """
 > """
 
 
-def main():
+def cli_main():
     sl = StudentList()
     for rec in SAMPLE:
         sl.add(*rec)
@@ -222,6 +222,151 @@ def main():
             plot_top5(sl)
         else:
             print("Invalid choice.")
+
+
+class StudentManagerGUI:
+    def __init__(self, root):
+        global tk, ttk, messagebox
+        import tkinter as tk
+        from tkinter import messagebox, ttk
+
+        self.root = root
+        self.root.title("Student Record Manager")
+        self.root.geometry("820x560")
+        self.root.minsize(700, 460)
+        self.sl = StudentList()
+        for rec in SAMPLE:
+            self.sl.add(*rec)
+
+        self.roll_var = tk.StringVar()
+        self.name_var = tk.StringVar()
+        self.marks_var = tk.StringVar()
+        self.status_var = tk.StringVar(value="Ready")
+        self._build_ui()
+        self.refresh_table()
+
+    def _build_ui(self):
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(self.root, padding=(18, 16, 18, 8))
+        header.grid(row=0, column=0, sticky="ew")
+        ttk.Label(header, text="Student Record Manager", font=("Helvetica", 20, "bold")).pack(anchor="w")
+        ttk.Label(header, text="Manage records and explore the sorting algorithms").pack(anchor="w", pady=(3, 0))
+
+        content = ttk.Frame(self.root, padding=(18, 8, 18, 18))
+        content.grid(row=1, column=0, sticky="nsew")
+        content.columnconfigure(1, weight=1)
+        content.rowconfigure(0, weight=1)
+
+        form = ttk.LabelFrame(content, text="Student details", padding=12)
+        form.grid(row=0, column=0, sticky="ns", padx=(0, 14))
+        for row, (label, variable) in enumerate((("Roll number", self.roll_var), ("Name", self.name_var), ("Marks", self.marks_var))):
+            ttk.Label(form, text=label).grid(row=row * 2, column=0, sticky="w", pady=(0, 3))
+            ttk.Entry(form, textvariable=variable, width=22).grid(row=row * 2 + 1, column=0, sticky="ew", pady=(0, 12))
+        ttk.Button(form, text="Add student", command=self.add_student).grid(row=6, column=0, sticky="ew", pady=(2, 5))
+        ttk.Button(form, text="Delete selected", command=self.delete_student).grid(row=7, column=0, sticky="ew", pady=5)
+        ttk.Separator(form).grid(row=8, column=0, sticky="ew", pady=10)
+        ttk.Button(form, text="Search by roll", command=self.search_student).grid(row=9, column=0, sticky="ew", pady=5)
+        ttk.Button(form, text="Top 5 chart", command=self.plot_top_students).grid(row=10, column=0, sticky="ew", pady=5)
+
+        records = ttk.LabelFrame(content, text="Records", padding=10)
+        records.grid(row=0, column=1, sticky="nsew")
+        records.columnconfigure(0, weight=1)
+        records.rowconfigure(0, weight=1)
+        columns = ("roll", "name", "marks")
+        self.table = ttk.Treeview(records, columns=columns, show="headings", selectmode="browse")
+        self.table.heading("roll", text="Roll")
+        self.table.heading("name", text="Name")
+        self.table.heading("marks", text="Marks")
+        self.table.column("roll", width=90, anchor="center")
+        self.table.column("name", width=220)
+        self.table.column("marks", width=100, anchor="center")
+        self.table.grid(row=0, column=0, sticky="nsew")
+        scrollbar = ttk.Scrollbar(records, orient="vertical", command=self.table.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.table.configure(yscrollcommand=scrollbar.set)
+
+        sort_bar = ttk.Frame(records)
+        sort_bar.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        ttk.Label(sort_bar, text="Sort and visualize:").pack(side="left")
+        ttk.Button(sort_bar, text="By roll", command=lambda: self.sort_students("roll")).pack(side="left", padx=(10, 4))
+        ttk.Button(sort_bar, text="By marks", command=lambda: self.sort_students("marks")).pack(side="left", padx=4)
+
+        ttk.Label(self.root, textvariable=self.status_var, relief="sunken", anchor="w", padding=(8, 4)).grid(
+            row=2, column=0, sticky="ew", padx=18, pady=(0, 12)
+        )
+
+    def refresh_table(self):
+        for item in self.table.get_children():
+            self.table.delete(item)
+        for student in self.sl:
+            self.table.insert("", "end", values=(student.roll, student.name, f"{student.marks:g}"))
+
+    def add_student(self):
+        try:
+            roll = int(self.roll_var.get().strip())
+            name = self.name_var.get().strip()
+            marks = float(self.marks_var.get().strip())
+            if not name:
+                raise ValueError("Name cannot be empty")
+            self.sl.add(roll, name, marks)
+        except ValueError as error:
+            messagebox.showerror("Invalid student", str(error), parent=self.root)
+            return
+        self.refresh_table()
+        self.status_var.set(f"Added {name} (roll {roll})")
+        self.roll_var.set("")
+        self.name_var.set("")
+        self.marks_var.set("")
+
+    def delete_student(self):
+        selected = self.table.selection()
+        if not selected:
+            messagebox.showinfo("Delete student", "Select a record first.", parent=self.root)
+            return
+        roll = int(self.table.item(selected[0], "values")[0])
+        if self.sl.delete(roll):
+            self.refresh_table()
+            self.status_var.set(f"Deleted roll {roll}")
+
+    def sort_students(self, field):
+        frames = []
+        self.sl.sort(field, recorder(frames))
+        self.refresh_table()
+        self.status_var.set(f"Sorted by {field}")
+        animate(frames, field, f"Merge sort by {field}")
+
+    def search_student(self):
+        try:
+            roll = int(self.roll_var.get().strip())
+        except ValueError:
+            messagebox.showerror("Invalid roll", "Enter a valid roll number to search.", parent=self.root)
+            return
+        frames = []
+        student = self.sl.search(roll, recorder(frames))
+        if student:
+            self.status_var.set(f"Found {student.name}: {student.marks:g} marks")
+            messagebox.showinfo("Student found", f"{student.name}\nRoll: {student.roll}\nMarks: {student.marks:g}", parent=self.root)
+        else:
+            self.status_var.set(f"Roll {roll} was not found")
+            messagebox.showinfo("Student not found", f"No student has roll {roll}.", parent=self.root)
+        self.refresh_table()
+        animate(frames, "roll", f"Binary search for roll {roll}")
+
+    def plot_top_students(self):
+        plot_top5(self.sl)
+        self.refresh_table()
+
+
+def main():
+    try:
+        import tkinter as tk
+    except ModuleNotFoundError as error:
+        raise SystemExit("Tkinter is required to launch the GUI. Install a Python build with Tk support.") from error
+    root = tk.Tk()
+    StudentManagerGUI(root)
+    root.mainloop()
 
 
 if __name__ == "__main__":
